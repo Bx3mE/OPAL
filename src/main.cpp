@@ -56,8 +56,8 @@ static uint64_t endNanos;
 
 static uint64_t _now;
 
-static coordinate lastMove;
-coordinate to;
+static coordinate previousTarget;
+coordinate currentTarget;
 
 static double distx;
 static double disty;
@@ -75,20 +75,23 @@ int lastLaserPWR = 0;
 bool laserChanged = false;
 int itcnt = 0;
 static int interpolCnt = 0;
+static bool movesaAreIncremental = false;
 
 void setup() {
-  lastMove.x = 0;
-  lastMove.y = 0;
-  lastMove.z = 0;
+  previousTarget.x = 0;
+  previousTarget.y = 0;
+  previousTarget.z = 0;
 
-  to.x = 0;
-  to.y = 0;
-  to.z = 0;
+  currentTarget.x = 0;
+  currentTarget.y = 0;
+  currentTarget.z = 0;
   
   Serial.begin(115200);
+  Serial.println("Init");
   galvo.begin();
+  Serial.println("Galvo init done");
   serialReciever.begin(&commandBuffer);
-  
+  Serial.println("Serial Reciever ready");
     pinMode(13, OUTPUT);
     
     digitalWrite(13,0); //Set LED OFF
@@ -104,6 +107,7 @@ void calculateMoveLengthNanos(double xdist, double ydist, double moveVelocity, d
 
 void processMcode(GCode* code)
 {
+  Serial.println("M-Code");
   switch (code->code)
   {
   case 3: //M3
@@ -112,19 +116,22 @@ void processMcode(GCode* code)
         //Fallthrough intended
   case 4: //M4
   {
-    int lpower = (*previousMove).s;
+    Serial.println("M3/M4");
+    int lpower = code->s;
     if( lpower != MAX_VAL)
     {
       lastLaserPWR = lpower;
     }
     #ifdef LASER_IS_SYNRAD
     laser.setLaserPWM(lastLaserPWR); //Unknown code might cause unexpected behaviour Better turn off laser - SAFETY
+    Serial.print("Laser SET!");Serial.println(lastLaserPWR);
     #else
     digitalWrite(LASER_PWM_OUT_PIN, lastLaserPWR);
     #endif    
     break;
   }
   case 5: //M5
+    Serial.println("M5");
     lastLaserPWR = 0;        
     #ifdef LASER_IS_SYNRAD
       laser.setLaserPWM(0); //Unknown code might cause unexpected behaviour Better turn off laser - SAFETY
@@ -134,15 +141,18 @@ void processMcode(GCode* code)
     break;
 
   case 17: //M17 - Turn all steppers ON -> Galvo & Stepper PSU Control (SSRs)
+    Serial.println("M17");
     digitalWrite(GALVO_SSR_OUT_PIN, 1);
     digitalWrite(STEPPER_SSR_OUT_PIN, 1); 
     break;
   case 18: //M18 - Turn all steppers OFF -> Galvo & Stepper PSU Control (SSRs)
+    Serial.println("M18");
     digitalWrite(GALVO_SSR_OUT_PIN, 0);
     digitalWrite(STEPPER_SSR_OUT_PIN, 0); 
     break;
 
 case 80: //M80 - Laser PSU Control (SSR)
+    Serial.println("M80");
     // Implicit delay for SynradCtrl::laserInitTime milliseconds (5000ms)
     #ifdef LASER_IS_SYNRAD
     laser.begin(LASER_PWM_OUT_PIN, LASER_SSR_OUT_PIN);
@@ -152,6 +162,7 @@ case 80: //M80 - Laser PSU Control (SSR)
 
     break;
   case 81: //M81 - Laser PSU Control (SSR)
+    Serial.println("M81");
     #ifdef LASER_IS_SYNRAD
     laser.stop();
     #else
@@ -173,17 +184,27 @@ void process()  {
   _now = nanos();
   
   if(beginNext)  {
+    //Serial.println("Begin next");
     while(!mBuffer.isEmpty())    {
       //processMCodes
-      GCode* cmd = new GCode(mBuffer.shift());
-        processMcode(cmd);
-        delete cmd;
+      Serial.println("processing MCode");
+      GCode* cmd = new GCode(mBuffer.pop());
+      processMcode(cmd);
+      delete cmd;
+      Serial.println("processing MCode Completed");
     }
-    
-    delete oldPreviousMove; 
-    oldPreviousMove = previousMove;
-    previousMove = currentMove;
-    currentMove = nextMove;
+    if(currentMove->code == 90)
+    {
+      delete currentMove;
+      currentMove = nextMove;
+    }
+    else
+    {
+      delete oldPreviousMove; 
+      oldPreviousMove = previousMove;
+      previousMove = currentMove;
+      currentMove = nextMove;
+    }
 
     bool gcodeFound = false;
     while(!gcodeFound && !commandBuffer.isEmpty())
@@ -205,24 +226,67 @@ void process()  {
     //Allways update history...
     if(previousMove)  //SET UP PREVIOUS POSITION
     {
-      if((*previousMove).x != MAX_VAL)
-        lastMove.x = (*previousMove).x;
-      if((*previousMove).y != MAX_VAL)
-        lastMove.y = (*previousMove).y;
-      if((*previousMove).z != MAX_VAL)
-        lastMove.z = (*previousMove).z;
+      if((*previousMove).absolute)
+      {
+        if((*previousMove).x != MAX_VAL)
+          previousTarget.x = (*previousMove).x;
+        if((*previousMove).y != MAX_VAL)
+          previousTarget.y = (*previousMove).y;
+        if((*previousMove).z != MAX_VAL)
+          previousTarget.z = (*previousMove).z;
+      }
+      else
+      { //incremental
+        if((*previousMove).x != MAX_VAL)
+          previousTarget.x += (*previousMove).x;
+        if((*previousMove).y != MAX_VAL)
+          previousTarget.y += (*previousMove).y;
+        if((*previousMove).z != MAX_VAL)
+          previousTarget.z += (*previousMove).z;
+      }
     }
     
     if(currentMove)  { 
-      if((*currentMove).x != MAX_VAL)
-        to.x = (*currentMove).x;
-      if((*currentMove).y != MAX_VAL)
-        to.y = (*currentMove).y;
-      if((*currentMove).z != MAX_VAL)
-        to.z = (*currentMove).z;
+
+      if((*currentMove).code == 90)
+      {   //G90 means no calculation and no interpolation as feedrate is ignored
+        Serial.println("G90");
+        movesaAreIncremental = false;
+        beginNext = true;
+        laser.handleLaser();
+        return;
+      }
+      else if((*currentMove).code == 91)
+      {   //G9 means no movement
+        Serial.println("G91");
+        movesaAreIncremental = true;
+        beginNext = true;
+        laser.handleLaser();
+        return;
+      }
+
+      if(movesaAreIncremental)
+      {
+        (*currentMove).absolute = false;
+        if((*currentMove).x != MAX_VAL)
+          currentTarget.x = previousTarget.x + (*currentMove).x;
+        if((*currentMove).y != MAX_VAL)
+          currentTarget.y = previousTarget.y + (*currentMove).y;
+        if((*currentMove).z != MAX_VAL)
+          currentTarget.z = previousTarget.z + (*currentMove).z;
+      }
+      else
+      {
+        //(*currentMove).absolute = true; //default initialized value
+        if((*currentMove).x != MAX_VAL)
+          currentTarget.x = (*currentMove).x;
+        if((*currentMove).y != MAX_VAL)
+          currentTarget.y = (*currentMove).y;
+        if((*currentMove).z != MAX_VAL)
+          currentTarget.z = (*currentMove).z;
+      }
       if((*currentMove).f != MAX_VAL)
         feedrate = (*currentMove).f;
-        
       // Set Laser Power
       if((*currentMove).s != MAX_VAL)
       {
@@ -237,11 +301,31 @@ void process()  {
           laser.setLaserPWM(lastLaserPWR); //Unknown code might cause unexpected behaviour Better turn off laser - SAFETY
           #endif
         #endif
-        startNanos = _now;      
-        distx = to.x-lastMove.x;
-        disty = to.y-lastMove.y;
-        distz = to.z-lastMove.z; //TODO: Add implementation
+        startNanos = _now;
+        if((*currentMove).absolute)
+        {
+          distx = currentTarget.x-previousTarget.x;
+          disty = currentTarget.y-previousTarget.y;
+          distz = currentTarget.z-previousTarget.z; 
+        }  
+        else
+        {
+          distx = (*currentMove).x;
+          disty = (*currentMove).y;
+          distz = (*currentMove).z;
+        } 
         calculateMoveLengthNanos(distx, disty, feedrate, &((*currentMove).moveLengthNanos));
+        if(previousMove->code == 90)
+        {
+          Serial.print("\nMoveLengthnanos = ");
+          Serial.print((*currentMove).moveLengthNanos);
+          Serial.print(" distX = ");
+          Serial.print(distx);
+          Serial.print(" disty = ");
+          Serial.print(disty);
+          Serial.print(" feedrate = ");
+          Serial.print(feedrate);
+        }
         endNanos = startNanos + (*currentMove).moveLengthNanos;
       }
       else if((*currentMove).code == 0)
@@ -262,49 +346,81 @@ void process()  {
         #endif
       }
       beginNext = false;
-    }
-  }
+    }//end if(currentmove)
+  }//end if(beginnext)
   
   //interpolate  
   if(currentMove && (_now > endNanos || (*currentMove).code == 0))  //We are out of time or G0
   {
+    Serial.println("Out of time - go to final pos x: ");Serial.println(currentTarget.x);Serial.println(" y:");Serial.println(currentTarget.y);
     #ifdef LASER_IS_SYNRAD
       laser.handleLaser();    
     #endif
-    galvo.goTo(map(to.x, 0.0,250.0, 65535,0)+0.5, map(to.y, 0.0,250.0, 0,65535)+0.5); //Make sure to hit the commanded position
+
+    #ifdef INVERSE_X
+    double mapx = map(currentTarget.x, 0.0,X_MAX, 65535,0)+0.5;
+    #else
+    double mapy = map(currentTarget.x, 0.0,X_MAX, 0,65535)+0.5;
+    #endif
+    
+    #ifdef INVERSE_Y
+    double mapx = map(currentTarget.y, 0.0,Y_MAX, 65535,0)+0.5;
+    #else
+    double mapy = map(currentTarget.y, 0.0,Y_MAX, 0,65535)+0.5;
+    #endif
+
+    galvo.goTo( mapx, mapy ); //Make sure to hit the commanded position
     beginNext = true;
     interpolCnt=0;
     return;
   }
   else if (currentMove)
   {
-
-
-    distx = to.x-lastMove.x;
-    disty = to.y-lastMove.y;
-    distz = to.z-lastMove.z; // not used.....
     uint64_t t = (*currentMove).moveLengthNanos; 
     double fraction_of_move = (double)(_now-startNanos)/t;
-    double x = (lastMove.x + (distx*fraction_of_move));
-    double y = (lastMove.y + (disty*fraction_of_move));
+    double x = (previousTarget.x + (distx*fraction_of_move));
+    double y = (previousTarget.y + (disty*fraction_of_move));
+
     interpolCnt++;
     #ifdef LASER_IS_SYNRAD
       laser.handleLaser();    
     #endif
-    galvo.goTo( map(x, 0.0,250.0, 65535,0)+0.5, map(y, 0.0,250.0, 0,65535)+0.5 );
+
+    #ifdef INVERSE_X
+    double mapx = map(x, 0.0,X_MAX, 65535,0)+0.5;
+    #else
+    double mapy = map(x, 0.0,X_MAX, 0,65535)+0.5;
+    #endif
+    
+    #ifdef INVERSE_Y
+    double mapx = map(y, 0.0,Y_MAX, 65535,0)+0.5;
+    #else
+    double mapy = map(y, 0.0,Y_MAX, 0,65535)+0.5;
+    #endif
+
+    if(interpolCnt%10==0)
+    {
+      Serial.print("\ninterpol - go to pos x: ");Serial.println(currentTarget.x);Serial.println(" y:");Serial.println(currentTarget.y);
+      Serial.print("\ninterpol - time left:");Serial.println((int)(endNanos - _now));
+    }
+    galvo.goTo( mapx, mapy );
     return ;
   }
   else 
   {
     //Serial.println("Idle");
+    #ifdef LASER_IS_SYNRAD
+      laser.handleLaser();    
+    #endif
   }
   return;
 }
 
 void loop() {  
-
-    serialReciever.handleSerial();
-    process();
+  
+  serialReciever.handleSerial();
+  
+  process();
     
 
 

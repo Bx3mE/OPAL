@@ -55,6 +55,7 @@ struct coordinate {
   double r; // Misc
   double t; // Misc
   double moveLengthNanos;
+  bool absolute = true; //absolute ==> G90 incremental ==> G91 
 };
 
 

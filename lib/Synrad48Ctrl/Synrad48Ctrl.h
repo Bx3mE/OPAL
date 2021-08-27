@@ -63,7 +63,7 @@ void set20kPWM(int PWM) {
     //Serial.print("\n Set 20");
     analogWriteFrequency(laserPWM_OUT_Pin, 20000);
   }
-  analogWrite(laserPWM_OUT_Pin, laserPWM); //Output Laser
+  analogWrite(laserPWM_OUT_Pin, PWM); //Output Laser
 }
 
 void set5kPWM() {

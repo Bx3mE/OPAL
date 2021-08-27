@@ -23,7 +23,7 @@
 
 #include <string.h>
 #include "Synrad48Ctrl.h"
-#define LASER_RESOLUTION 12
+#include "../../src/configuration.h"
 
 Synrad48Ctrl::Synrad48Ctrl()
 {
@@ -34,7 +34,7 @@ uint16_t LastPWMRequest = 0;
 
 void Synrad48Ctrl::setLaserPWM(uint16_t PWM)
 {
-  laserPWM = PWM;
+  laserPWM = map(PWM,0,LASER_PWM_MAX,0,2^LASER_RESOLUTION);
   handleLaser();
   }
 
@@ -68,6 +68,7 @@ void Synrad48Ctrl::stop()
   digitalWrite(laserPSU_SSR_Pin,0);
   analogWrite(laserPWM_OUT_Pin,0);
   laserState = 30;
+  digitalWrite(13,1); //Set LED ON
 }
 
  
@@ -91,6 +92,7 @@ void Synrad48Ctrl::handleLaser()
     }
     if(laserPWM!=oldlaserPWM)
     {
+      Serial.println("LaserHasNewValue");
       //Serial.print("\n"); Serial.print(laserPWM); Serial.print("Old and new are Different ======\n========\n========\n======\n======");
       oldlaserPWM = laserPWM;
     }

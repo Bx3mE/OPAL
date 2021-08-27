@@ -174,7 +174,7 @@ uint8_t XY2_100::parity(uint16_t v)
 
 void XY2_100::goTo(uint16_t x,uint16_t y)
 {
-  
+    //Serial.print("\n Galvo goto x:"); Serial.print(x); Serial.print(" y:"); Serial.print(y);
     unsigned long dataX = XY2_100::buildMsg(x);
     unsigned long dataY = XY2_100::buildMsg(y);
     if(selector)
