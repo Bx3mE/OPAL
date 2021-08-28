@@ -105,9 +105,21 @@ void calculateMoveLengthNanos(double xdist, double ydist, double moveVelocity, d
   return;
 }
 
+void processMQueue()
+{
+  while(!mBuffer.isEmpty())
+  {
+    //processMCodes
+    //Serial.println("processing MCode");
+    GCode* cmd = new GCode(mBuffer.pop());
+    processMcode(cmd);
+    delete cmd;
+    //Serial.println("processing MCode Completed");
+  }
+}
 void processMcode(GCode* code)
 {
-  Serial.println("M-Code");
+  //Serial.println("M-Code");
   switch (code->code)
   {
   case 3: //M3
@@ -142,13 +154,13 @@ void processMcode(GCode* code)
 
   case 17: //M17 - Turn all steppers ON -> Galvo & Stepper PSU Control (SSRs)
     Serial.println("M17");
-    digitalWrite(GALVO_SSR_OUT_PIN, 1);
-    digitalWrite(STEPPER_SSR_OUT_PIN, 1); 
+    //digitalWrite(GALVO_SSR_OUT_PIN, 1);
+    //digitalWrite(STEPPER_SSR_OUT_PIN, 1); 
     break;
   case 18: //M18 - Turn all steppers OFF -> Galvo & Stepper PSU Control (SSRs)
     Serial.println("M18");
-    digitalWrite(GALVO_SSR_OUT_PIN, 0);
-    digitalWrite(STEPPER_SSR_OUT_PIN, 0); 
+    //digitalWrite(GALVO_SSR_OUT_PIN, 0);
+    //digitalWrite(STEPPER_SSR_OUT_PIN, 0); 
     break;
 
 case 80: //M80 - Laser PSU Control (SSR)
@@ -185,14 +197,7 @@ void process()  {
   
   if(beginNext)  {
     //Serial.println("Begin next");
-    while(!mBuffer.isEmpty())    {
-      //processMCodes
-      Serial.println("processing MCode");
-      GCode* cmd = new GCode(mBuffer.pop());
-      processMcode(cmd);
-      delete cmd;
-      Serial.println("processing MCode Completed");
-    }
+    processMQueue();
     if(currentMove->code == 90)
     {
       delete currentMove;

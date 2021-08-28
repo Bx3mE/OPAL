@@ -34,16 +34,16 @@
  /*
   Pin for SSR Relay control of stepper PSU
  */
-  #define STEPPER_SSR_OUT_PIN 20
+  #define STEPPER_SSR_OUT_PIN 11
  /*
   Pin for SSR Relay control of galvo PSU
  */
-  #define GALVO_SSR_OUT_PIN 11
+  #define GALVO_SSR_OUT_PIN 10
 
    /*
   Pin for SSR Relay control of laser PSU
  */
-  #define LASER_SSR_OUT_PIN 10
+  #define LASER_SSR_OUT_PIN 1
 
   /*
     PWM pin to control laser power/intensity (0-4095)

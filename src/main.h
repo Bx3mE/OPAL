@@ -19,5 +19,6 @@
   along with OPAL Firmware.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+void processMQueue();
 void processMcode(GCode* code);
 void process();
