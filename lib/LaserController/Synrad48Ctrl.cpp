@@ -43,7 +43,13 @@ uint16_t LastPWMRequest = 0;
 
 void Synrad48Ctrl::update(uint16_t PWM)
 {
+<<<<<<< Updated upstream:lib/LaserController/Synrad48Ctrl.cpp
   laserPWM = PWM;
+=======
+  int tmp_pwmMax = LASER_PWM_MAX;
+  int tmp_LaserRes = LASER_RESOLUTION;
+  laserPWM = map(PWM,0,tmp_pwmMax,0,2^tmp_LaserRes);
+>>>>>>> Stashed changes:lib/Synrad48Ctrl/Synrad48Ctrl.cpp
   handleLaser();
   }
 void Synrad48Ctrl::update()
